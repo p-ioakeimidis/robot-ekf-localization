@@ -1,110 +1,105 @@
-# Global & Local Localization 
+# ROS1 Noetic EKF Localization for a Differential Drive Robot
 
-Summary
-- This document describes the two localization packages in this workspace:
-  - `global_localization` — global/global EKF (coarse/global localization, fusing GPS/odom/IMU/map-frame data).
-  - `local_localization` — local/local EKF (high-rate local odometry/IMU fusion for accurate short-term pose).
-- Location: `src/global_localization` and `src/local_localization`.
-- Goal: provide a robust, two-layer localization pipeline for simulation (Gazebo) and real robot data.
+This project demonstrates **state estimation for a differential two-wheel (differential drive) mobile robot** using the **Extended Kalman Filter (EKF)** in **ROS1 Noetic**. The robot is simulated in Gazebo and visualized in RViz, with separate configurations for **local** and **global** localization.
 
-Repository layout (relevant)
-- src/
-  - first_robot/            (robot model, sensors, Gazebo launches, map)
-    - launch/gazebo.launch  (spawn robot, start Gazebo)
-    - maps/my_map.*         (occupancy map used by global localization / rviz)
-  - global_localization/
-    - launch/global_ekf.launch
-    - config/global_ekf.yaml
-  - local_localization/
-    - launch/local_ekf.launch
-    - config/local_ekf.yaml
+The primary goal of the project is to fuse multiple sources of information to produce a robust estimate of the robot's pose while navigating a known environment.
 
-Prerequisites
-- ROS Noetic on Ubuntu 20.04
-- Common ROS packages: `robot_state_publisher`, `joint_state_publisher`, `gazebo_ros`, `tf`, `nav_msgs`, `sensor_msgs`, `robot_localization` (EKF/UKF), `rviz`
-- Build workspace:
-  - cd ~/catkin_ws
-  - catkin_make
-  - source devel/setup.bash
+## Features
 
-Quickstart (simulation)
-1. Start Gazebo and spawn the robot:
-   - roslaunch first_robot gazebo.launch
-2. Start the global EKF (coarse/global fusion):
-   - roslaunch global_localization global_ekf.launch
-3. Start the local EKF (high-rate local fusion):
-   - roslaunch local_localization local_ekf.launch
-4. Open RViz to visualize:
-   - roslaunch first_robot rviz.launch
-   - Show topics: /map, /tf, /odometry (filtered output), /scan, /robot_model
-5. (Optional) Use RViz "2D Pose Estimate" to set initial pose or publish /initialpose for global EKF to converge.
+* Differential drive (two-wheel) robot model
+* Extended Kalman Filter (EKF) localization using the `robot_localization` package
+* Separate **local** and **global** EKF configurations
+* Gazebo simulation environment
+* RViz visualization
+* Occupancy grid map support for localization
+* Modular ROS launch and configuration files
 
-Notes on ordering
-- Start Gazebo / sensors first so sensor topics exist.
-- Start global EKF to fuse map/GPS/low-rate sensors and produce a stable world-frame pose.
-- Start local EKF after global EKF so local filter can use corrected odom/imu if configured.
+## Repository Structure
 
-Key files & parameters
-- global_localization/config/global_ekf.yaml
-  - Contains `frequency`, `sensor_timeout`, `ekf` process and measurement covariances, `map_frame` / `odom_frame` / `base_link_frame`, and which sensor inputs are enabled (GPS, odom, imu, etc.).
-- local_localization/config/local_ekf.yaml
-  - Tuned for higher update rates (wheel odometry + IMU), lower latencies; different covariances and timeout values.
-- global_localization/launch/global_ekf.launch
-  - Launches `robot_localization` node (ekf_localization_node or ukf) with the global config.
-- local_localization/launch/local_ekf.launch
-  - Launches another `robot_localization` node for local fusion; typically publishes a filtered odometry topic used by planners/controllers.
+```text
+src/
+├── first_robot/
+│   ├── launch/
+│   │   └── gazebo.launch          # Launches Gazebo and spawns the robot
+│   └── maps/
+│       ├── my_map.pgm
+│       └── my_map.yaml            # Occupancy grid map
+│
+├── global_localization/
+│   ├── launch/
+│   │   └── global_ekf.launch
+│   └── config/
+│       └── global_ekf.yaml
+│
+└── local_localization/
+    ├── launch/
+    │   └── local_ekf.launch
+    └── config/
+        └── local_ekf.yaml
+```
 
-Common topics & frames (adjust to your configs)
-- Sensor inputs (from robot/Gazebo):
-  - /imu/data (sensor_msgs/Imu)
-  - /odom (nav_msgs/Odometry) — wheel odometry
-  - /gps/fix or /fix (sensor_msgs/NavSatFix) — if present
-  - /scan (sensor_msgs/LaserScan) — for mapping/rviz
-- EKF outputs:
-  - Filtered odometry (commonly `/odometry/filtered` or a namespaced topic defined in launch)
-  - published TF between `map` and `odom` (or `world`) depending on configuration
-- Frames:
-  - map (global map frame)
-  - odom (local odometry frame)
-  - base_link (robot base)
-  - imu_link, gps_link, etc.
+## EKF-Based Localization
 
-Usage tips
-- Use RViz to verify TF tree (`rosrun tf tf_monitor` / `rosrun tf view_frames`).
-- If EKF won't fuse a sensor: verify topic names, message types, timestamps, and frame_ids match the config.
-- If filter is unstable: increase covariance on the problematic sensor (in YAML), verify IMU orientation covariances.
-- To set initial global pose: publish `/initialpose` (geometry_msgs/PoseWithCovarianceStamped) from RViz or a node.
+The project uses the **Extended Kalman Filter (EKF)** to estimate the robot's state by combining information from multiple sensors and motion estimates.
 
-Troubleshooting
-- No output from EKF:
-  - Confirm the `ekf` node is running: rosnode list
-  - Check topics with rostopic list / rostopic echo
-  - Inspect node logs: roslaunch ... then check terminal output or `rosparam get /` for config values
-- TF discontinuities / jumps:
-  - Check frame_id correctness and consistent timestamps.
-  - Ensure only one node is publishing `map->odom` or `odom->base_link` transforms.
-- Delay/latency issues:
-  - Confirm `use_sim_time` when using Gazebo (set to true in gazebo.launch).
-  - Ensure `sensor_timeout` and `frequency` in YAML align with your sensor rates.
+Two localization pipelines are provided:
 
-Tuning guidelines
-- Start with conservative (large) covariances for noisy sensors and tighten as you validate performance.
-- For global EKF: rely more on GPS/map (lower covariance) and less on wheel odometry if wheel slippage is expected.
-- For local EKF: trust high-rate IMU and wheel odom; set IMU orientation covariance low if IMU is accurate.
+* **Local EKF**
 
-Example roslaunch commands
-- Simulation full stack:
-  - source ~/catkin_ws/devel/setup.bash
-  - roslaunch first_robot gazebo.launch
-  - roslaunch global_localization global_ekf.launch
-  - roslaunch local_localization local_ekf.launch
-  - roslaunch first_robot rviz.launch
+  * Produces a smooth, continuous estimate of the robot pose in the local (`odom`) frame.
+  * Suitable for short-term navigation where accumulated drift is acceptable.
 
-Extending / Contribution notes
-- Add sensors: update robot URDF (first_robot/urdf) and adjust YAML covariances.
-- Add diagnostics: publish sensor health and use `diagnostic_aggregator`.
-- Add static transforms in `first_robot/launch` if some frames are missing.
+* **Global EKF**
 
-Contact / References
-- See `robot_localization` ROS wiki for EKF/UKF parameters and examples:
-  - http://wiki.ros.org/robot_localization
+  * Incorporates globally referenced information to estimate the robot pose in the `map` frame.
+  * Reduces long-term drift and maintains consistency with the environment map.
+
+This separation reflects a common architecture used in mobile robotics, where local odometry provides responsive motion estimates while global localization corrects accumulated error.
+
+## Robot Platform
+
+The simulated platform is a **differential drive robot** with two independently driven wheels. Robot motion is generated by varying the angular velocities of the left and right wheels, making it a common platform for indoor autonomous navigation and localization research.
+
+## Running the Simulation
+
+Start the Gazebo simulation and spawn the robot:
+
+```bash
+roslaunch first_robot gazebo.launch
+```
+
+Run the local EKF:
+
+```bash
+roslaunch local_localization local_ekf.launch
+```
+
+Or run the global EKF:
+
+```bash
+roslaunch global_localization global_ekf.launch
+```
+
+Open RViz to visualize the robot pose, transforms, and localization results.
+
+
+## Map
+
+The repository includes a pre-generated occupancy grid map (`my_map`) that can be used for global localization and visualization.
+
+## Technologies
+
+* ROS1 Noetic
+* `robot_localization`
+* Extended Kalman Filter (EKF)
+* Gazebo
+* RViz
+* URDF
+* Differential drive kinematics
+
+## Future Improvements
+
+* Integration with SLAM for online map generation
+* Sensor fusion with IMU and GPS (where applicable)
+* Path planning and autonomous navigation
+* Migration to ROS 2
