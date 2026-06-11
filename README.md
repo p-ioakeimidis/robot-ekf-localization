@@ -63,7 +63,7 @@ The simulated platform is a **differential drive robot** with two independently 
 
 ## Installation
 
-Clone both repositories into the same catkin workspace:
+Clone the repository into the catkin workspace:
 
 ```bash id="kq9x2a"
 cd ~/catkin_ws/src
